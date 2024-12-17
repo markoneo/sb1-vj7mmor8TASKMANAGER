@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function validateTaskData() {
+      let validFields = ['text', 'completed', 'datetime', 'userId', 'createdAt', 'updatedAt'];
+      let incomingData = request.resource.data;
+      
+      return incomingData.keys().hasAll(validFields)
+        && incomingData.keys().hasOnly(validFields)
+        && incomingData.text is string
+        && incomingData.text.size() <= 1000
+        && incomingData.completed is bool
+        && (incomingData.datetime == null || incomingData.datetime is timestamp)
+        && incomingData.userId is string
+        && incomingData.userId == request.auth.uid;
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isAuthenticated() && isOwner(resource.data.userId);
+      allow create: if isAuthenticated() 
+        && validateTaskData()
+        && request.resource.data.createdAt == request.time;
+      allow update: if isAuthenticated() 
+        && isOwner(resource.data.userId)
+        && validateTaskData()
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && isOwner(userId);
+    }
+  }
+}
